@@ -8,6 +8,13 @@ def handle_user_connection(connection: socket.socket, address: str) -> None:
         Get user connection in order to keep receiving their messages and
         sent to others users/connections.
     '''
+
+    # log the user entering the server
+    print(str(f'{address[0]}:{address[1]}') + " has joined the server.")
+
+    # dictionary of ip addresses and possible nicknames. Blank by default
+    dict={}
+
     while True:
         try:
             # Get client message
@@ -16,12 +23,99 @@ def handle_user_connection(connection: socket.socket, address: str) -> None:
             # If no message is received, there is a chance that connection has ended
             # so in this case, we need to close connection and remove it from connections list.
             if msg:
-                # Log message sent by user
-                print(f'{address[0]}:{address[1]} - {msg.decode()}')
+                # first assign the sender ip to a variable
+                sender = str(f'{address[0]}:{address[1]}')
+
+                # [[COMMAND]] debug commands
+                if msg.decode()=='!connections':
+                    for each in connections:
+                        print("\n" + str(each))
+                    continue
+
+                if msg.decode()=='!connection':
+                    print(connection)
+                    continue
+
+                # [[COMMAND]] recognize when the sender wants to create a nickname for themselves
+                if msg.decode().split(" ")[0]=='!name': 
+                    try:
+                        key = sender
+                        value = str(msg.decode().split(" ")[1])
+                        dict[key] = value
+                    except Exception:
+                        # catch if no input passed in, telling sender to reformat command.
+                        for each in connections:
+                            if each == connection:
+                                try:
+                                    # Sending message to client connection
+                                    each.send(str('Please check your command syntax. The command usage is "!name [args]", where [args] is a string.').encode())
+                                    # if it fails, there is a chance of socket has died
+                                except Exception as e:
+                                    print('Error broadcasting message: {e}')
+                                    remove_connection(each)
+                    continue
+
+                # [[COMMAND]] creates a command that when run closes connections to other users
+                if msg.decode().split(" ")[0]=='!kick':
+                    try:
+                        arg = str(msg.decode().split(" ")[1]) #if this fails, that means nothing was passed in as an argument
+                        if arg == 'all': #if the argument is "all", kick all other users
+                            broadcast("You have been kicked from the server.", connection) #first tell the users they have been kicked
+                            for kicked in connections[:]:
+                                ip = str(kicked).split("raddr=('")[1].split("', ")[0] #this gets the ip address
+                                port = str(kicked).split("raddr=('")[1].split("', ")[1].split(")")[0] #this gets the port number
+                                full_address = ip + ":" + port #this puts the two together in readable form ie 127.0.0.1:1111
+                                
+                                if kicked != connection:                            
+                                    print(full_address + " has been kicked from the server.")
+                                    remove_connection(kicked)
+                        else:
+                            found=0
+                            for kicked in connections[:]:
+                                ip = str(kicked).split("raddr=('")[1].split("', ")[0] #this gets the ip address
+                                port = str(kicked).split("raddr=('")[1].split("', ")[1].split(")")[0] #this gets the port number
+                                full_address = ip + ":" + port #this puts the two together in readable form ie 127.0.0.1:1111
+
+                                if full_address == arg:
+                                    print(full_address + " has been kicked from the server.")
+                                    kicked.send(str("You have been kicked from the server.").encode())
+                                    remove_connection(kicked)
+                                    found=1
+                            if found == 0:
+                                for each in connections:
+                                    if each == connection:
+                                        try:
+                                            # Sending message to client connection
+                                            each.send(str("No such user was found.").encode())
+                                            # if it fails, there is a chance of socket has died
+                                        except Exception as e:
+                                            print('Error broadcasting message: {e}')
+                                            remove_connection(each)
+                                            break
+                    except Exception:
+                        # catch if no input passed in, telling sender to reformat command.
+                        for each in connections:
+                            if each == connection:
+                                try:
+                                    # Sending message to client connection
+                                    each.send(str('Please check your command syntax. The command usage is "!kick [args]", where [args] is a string. [args] can be a username, or "all" to kick off all other users.').encode())
+                                    # if it fails, there is a chance of socket has died
+                                except Exception as e:
+                                    print('Error broadcasting message: {e}')
+                                    remove_connection(each)
+                    continue
+
                 
                 # Build message format and broadcast to users connected on server
-                msg_to_send = f'From {address[0]}:{address[1]} - {msg.decode()}'
-                broadcast(msg_to_send, connection)
+                if connection in connections:
+                    # Log message sent by user
+                    print(sender + f' - {msg.decode()}')
+                    if sender in dict.keys():
+                        nickname = str(dict[sender])
+                        msg_to_send = "\t" + f'From {nickname} - {msg.decode()}'
+                    else:
+                        msg_to_send = "\t" + f'From {address[0]}:{address[1]} - {msg.decode()}'    
+                    broadcast(msg_to_send, connection)
 
             # Close connection if no message was sent
             else:
